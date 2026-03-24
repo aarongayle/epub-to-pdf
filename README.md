@@ -35,6 +35,7 @@ curl -X POST http://localhost:3000 \
 | `screenWidth` | `400` | Viewport/page width in px |
 | `screenHeight` | `600` | Viewport/page height in px |
 | `pageMargin` | `25mm` | CSS page margin |
+| `fontSize` | *(book default)* | Body font size, e.g. `16px` or `1.2em` |
 | `bookmarks` | `true` | Enable Chromium PDF outline |
 | `settleMs` | `3000` | Wait time (ms) after DOM load before rendering |
 
@@ -66,6 +67,7 @@ pnpm convert -- \
 - `--screen-width`: viewport/page width in px (default `400`)
 - `--screen-height`: viewport/page height in px (default `600`)
 - `--page-margin`: CSS page margin (default `25mm`)
+- `--font-size`: body font size, e.g. `16px` or `1.2em` (default: book's own styles)
 - `--bookmarks`: `true`/`false` to enable Chromium outline generation (default `true`)
 - `--settle-ms`: wait time after DOM load before PDF render (default `3000`)
 

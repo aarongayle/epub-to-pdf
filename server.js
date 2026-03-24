@@ -39,6 +39,7 @@ const server = http.createServer(async (req, res) => {
     pageMargin: qs.get("pageMargin") ?? "25mm",
     bookmarks: qs.get("bookmarks") !== "false",
     settleMs: parseNum(qs.get("settleMs"), 3000),
+    fontSize: qs.get("fontSize") ?? null,
   };
 
   let body;

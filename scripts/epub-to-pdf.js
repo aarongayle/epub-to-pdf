@@ -12,6 +12,7 @@ function parseArgs(argv) {
     pageMargin: "25mm",
     bookmarks: true,
     settleMs: 3000,
+    fontSize: null,
   };
 
   for (let i = 2; i < argv.length; i += 1) {
@@ -38,13 +39,16 @@ function parseArgs(argv) {
     } else if (arg === "--settle-ms" && next) {
       opts.settleMs = Number(next);
       i += 1;
+    } else if (arg === "--font-size" && next) {
+      opts.fontSize = next;
+      i += 1;
     }
   }
 
   if (!opts.input || !opts.output) {
     throw new Error(
       "Usage: node scripts/epub-to-pdf.js --input <file.epub> --output <file.pdf> " +
-        "[--screen-width 1200] [--screen-height 1800] [--page-margin 18mm] [--bookmarks true] [--settle-ms 3000]",
+        "[--screen-width 1200] [--screen-height 1800] [--page-margin 18mm] [--bookmarks true] [--settle-ms 3000] [--font-size 16px]",
     );
   }
 
@@ -75,6 +79,7 @@ async function main() {
     pageMargin: opts.pageMargin,
     bookmarks: opts.bookmarks,
     settleMs: opts.settleMs,
+    fontSize: opts.fontSize,
   });
 
   await fs.writeFile(outputPath, pdfBuffer);
