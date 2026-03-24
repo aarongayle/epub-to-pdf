@@ -23,7 +23,23 @@ function readBody(req) {
   });
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": process.env.CORS_ORIGIN || "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 const server = http.createServer(async (req, res) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(key, value);
+  }
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   if (req.method !== "POST") {
     res.writeHead(405, { "Content-Type": "text/plain" });
     res.end("Method Not Allowed — send a POST request with an EPUB body.");
