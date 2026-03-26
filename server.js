@@ -3,6 +3,9 @@ import { convertEpubToPdf } from "./lib/convert.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 
+/** Base64 payload size per NDJSON line (keeps chunks small for proxies). */
+const PDF_B64_CHUNK_BYTES = 64 * 1024;
+
 /**
  * Parse a query string value as a number, returning the fallback if invalid.
  */
@@ -26,7 +29,7 @@ function readBody(req) {
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.CORS_ORIGIN || "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Accept",
 };
 
 const server = http.createServer(async (req, res) => {
@@ -58,6 +61,10 @@ const server = http.createServer(async (req, res) => {
     fontSize: qs.get("fontSize") ?? null,
   };
 
+  /** Raw `application/pdf` body (no progress); use `?binary=1` for simple curl `-o file.pdf`. */
+  const binaryResponse =
+    qs.get("binary") === "1" || qs.get("format") === "binary";
+
   let body;
   try {
     body = await readBody(req);
@@ -74,38 +81,91 @@ const server = http.createServer(async (req, res) => {
   }
 
   console.log(
-    `[${new Date().toISOString()}] Converting ${(body.length / 1024).toFixed(1)} KB EPUB…`,
+    `[${new Date().toISOString()}] Converting ${(body.length / 1024).toFixed(1)} KB EPUB… (${binaryResponse ? "binary" : "ndjson stream"})`,
   );
 
+  if (binaryResponse) {
+    try {
+      const pdfBuffer = await convertEpubToPdf(body, opts);
+      res.writeHead(200, {
+        "Content-Type": "application/pdf",
+        "Content-Length": pdfBuffer.length,
+        "Content-Disposition": 'attachment; filename="output.pdf"',
+      });
+      res.end(pdfBuffer);
+      console.log(
+        `[${new Date().toISOString()}] Done — sent ${(pdfBuffer.length / 1024).toFixed(1)} KB PDF.`,
+      );
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] Conversion failed:`, err);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end(`Conversion failed: ${err.message || err}`);
+      }
+    }
+    return;
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "application/x-ndjson",
+    "Cache-Control": "no-cache",
+    "X-Content-Type-Options": "nosniff",
+    Connection: "keep-alive",
+  });
+
+  const writeLine = (obj) => {
+    res.write(`${JSON.stringify(obj)}\n`);
+  };
+
   try {
-    const pdfBuffer = await convertEpubToPdf(body, opts);
-    res.writeHead(200, {
-      "Content-Type": "application/pdf",
-      "Content-Length": pdfBuffer.length,
-      "Content-Disposition": 'attachment; filename="output.pdf"',
+    writeLine({
+      type: "start",
+      message: "Conversion started",
+      epubBytes: body.length,
     });
-    res.end(pdfBuffer);
+
+    const pdfBuffer = await convertEpubToPdf(body, {
+      ...opts,
+      onProgress: (p) => writeLine({ type: "progress", ...p }),
+    });
+
+    for (let i = 0; i < pdfBuffer.length; i += PDF_B64_CHUNK_BYTES) {
+      writeLine({
+        type: "pdfChunk",
+        data: pdfBuffer.subarray(i, i + PDF_B64_CHUNK_BYTES).toString("base64"),
+      });
+    }
+
+    writeLine({ type: "complete", totalBytes: pdfBuffer.length });
+    res.end();
     console.log(
-      `[${new Date().toISOString()}] Done — sent ${(pdfBuffer.length / 1024).toFixed(1)} KB PDF.`,
+      `[${new Date().toISOString()}] Done — streamed ${(pdfBuffer.length / 1024).toFixed(1)} KB PDF (NDJSON).`,
     );
   } catch (err) {
     console.error(`[${new Date().toISOString()}] Conversion failed:`, err);
-    if (!res.headersSent) {
-      res.writeHead(500, { "Content-Type": "text/plain" });
-      res.end(`Conversion failed: ${err.message || err}`);
+    try {
+      writeLine({
+        type: "error",
+        message: err?.message || String(err),
+      });
+    } catch {
+      /* response may be closed */
     }
+    res.end();
   }
 });
 
 server.listen(PORT, () => {
   console.log(`epub-to-pdf server listening on http://localhost:${PORT}`);
   console.log();
-  console.log("Usage:");
+  console.log("Default: NDJSON stream (progress + base64 pdf chunks) — avoids idle timeouts.");
+  console.log("  See README for client examples.");
+  console.log();
+  console.log("Raw PDF only (no progress):");
   console.log(
-    `  curl -X POST http://localhost:${PORT} \\`,
+    `  curl -X POST "http://localhost:${PORT}?binary=1" -H "Accept: application/pdf" \\`,
   );
-  console.log(`    --data-binary @book.epub \\`);
-  console.log(`    -o book.pdf`);
+  console.log(`    --data-binary @book.epub -o book.pdf`);
   console.log();
   console.log("Optional query params:");
   console.log(
